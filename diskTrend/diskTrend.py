@@ -93,11 +93,11 @@ def showplt(df,topic, show=False, Save=''):
 
 
 def diskTrend2(d, histday='30d',sigma=2):
-    # 读取历史数据
+    # 读取数据
     startt = time.time()
     data_list = []
-    files = glob.glob(os.path.join(d,'*-jfstrend.csv'))
-    #files = glob.glob(os.path.join(d,'NOVPLGAPP03-jfstrend.csv'))
+    #files = glob.glob(os.path.join(d,'*-jfstrend.csv'))
+    files = glob.glob(os.path.join(d,'*[!old]-jfstrend.csv'))
     for f in files:
         df = pd.read_csv(f, index_col=None, header=0)
         host = os.path.basename(f).split('-')[0]
@@ -119,6 +119,9 @@ def diskTrend2(d, histday='30d',sigma=2):
     #剔除用量为负的数值
     df.loc[df[df['direction']==-1].index,['pusage','musage']] = 0
     df['Date'] = pd.to_datetime(df['Date'],format='%Y%m%d')
+    df.sort_values(by=['host','JFS','Date'], inplace=True)
+    df.drop_duplicates(['host','JFS','Date'], inplace=True)
+    df.reset_index(inplace=True, drop=True)
     print 'base calc %0.2f' %(time.time()-startt)
 
     print '----------------base data overview---------------------'
@@ -131,7 +134,6 @@ def diskTrend2(d, histday='30d',sigma=2):
     #df = df[df.JFS=='DISK_D']
 
     print '----------------model data overview---------------------'
-    #df.sort_values(by=['host','JFS','Date'],ascending=True,inplace=True)
     startt = time.time()
     df.set_index('Date',inplace=True)
     m_agv = df.groupby(by=['host','JFS']).rolling(histday,closed='left', min_periods=7).mean()[['pusage','musage']].reset_index().rename(columns={'pusage':'pmean','musage':'mmean'})
@@ -180,23 +182,40 @@ def diskTrend2(d, histday='30d',sigma=2):
     rglist = []
     for nm,gp in model.groupby(by=['host','JFS']):
         rglist.append(trendDist(gp,nm[0],nm[1]))
-    trendRange = pd.concat(rglist,axis=0, ignore_index=True)
-    trendRange.to_csv(os.path.join(modeldir, 'trendRange1.csv'))
-
-    trendRange = trendRange[trendRange.flag == 1].groupby(by=['host','JFS']).count().sort_values(by=['n'], ascending=False)
-    print trendRange.head()
-    print 'dist data need %0.2f' %(time.time()-startt)
-
+    trg = pd.concat(rglist,axis=0, ignore_index=True)
+    trg.to_csv(os.path.join(modeldir, 'diskUseTrend.csv'))
     model.to_csv(os.path.join(modeldir, 'model.csv'))
-    #trendRange.to_csv(os.path.join(modeldir, 'trendRange.csv'))
+
+    #主要异常信息显示
 
     #特殊用例显示
     #h =  model[(model.host=='NOVPWATT02') & (model.JFS=='DISK_D')]
     #h.to_csv(r'e:\tmp.csv')
     #showplt(h,'NOVPWATT02 DISK_D')
 
-    #h =  model[(model.host=='AXACCNDB') & (model.JFS=='DISK_D')]
-    #showplt(h,'AXACCNDB DISK_D')
+    # 寻找连续三天趋势改变的
+    # 连续三天趋势改变
+    upper3days = trg[(trg.flag == 1) & (trg.n >= 3)].sort_values(by='n', ascending=False)
+    upper3days.to_csv(os.path.join(reportdir,'uppder3dasyTrend.csv'))
+    for ix,row in upper3days.iterrows():
+        hs = row['host']
+        js = row['JFS']
+        stdt = row['start'] - datetime.timedelta(days=30)
+        enddt = row['end'] + datetime.timedelta(days=10)
+        print hs,js,stdt,enddt
+        h =  model[(model.host==hs) & (model.JFS==js) & (model.Date >= stdt) & (model.Date <= enddt)]
+        #print h.head() 
+        tp = hs + '-' + js + str(row['start'])[0:10] +'-'+ str(row['end'])[0:10] +'-rangeUpper3days'
+        showplt(h,tp,show=False,Save=os.path.join(reportdir,tp))
+        #raw_input()
+
+
+
+"""
+    trendRange = trg[trg.flag == 1].groupby(by=['host','JFS']).count().sort_values(by=['n'], ascending=False)
+    print trendRange.head()
+    print 'dist data need %0.2f' %(time.time()-startt)
+
 
     # 选择重点机器生成图表
     topn = 2
@@ -232,6 +251,7 @@ def diskTrend2(d, histday='30d',sigma=2):
         h =  model[(model.host==row['host']) & (model.JFS==row['JFS'])]
         topic = row['host'] + '_' + row['JFS'] + 'usedasy sum tail'
         showplt(h, topic, Save=os.path.join(reportdir,topic))
+"""
 
 
 
